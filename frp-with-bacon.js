@@ -1,7 +1,5 @@
 "use strict";
 
-var updatesOverTime = [];
-
 var width = 960,
     height = 600,
     margins = {
@@ -212,17 +210,28 @@ var updateCount = updateStream.scan(0, function(value) {
 });
 
 var sampledUpdates = updateCount.sample(samplingTime);
-var totalUpdatesBeforeLastSample = 0;
-sampledUpdates.onValue(function(value) {
-    updatesOverTime.push({
-        x: new Date(), 
-        y:(value - totalUpdatesBeforeLastSample) / 
-            (samplingTime / 1000)
+
+var rateUpdates =
+    sampledUpdates
+    .map(function (value) {
+        // timestamp all samples
+        return {date: new Date(), value: value};
+    })
+    .slidingWindow(2)
+    .skip(2) // we'll ignore the first two results, they don't contain enough samples to determine a rate
+    .map(function(updates) {
+        // Determine rate of the last two samples
+        var previous = updates[0];
+        var current = updates[1];
+        return {
+            x: current.date,
+            y: (current.value - previous.value) / (current.date - previous.date) * 1000 // Delta is in ms, but we need s.
+        }
+        //
     });
-    if (updatesOverTime.length > maxNumberOfDataPoints)  {
-        updatesOverTime.shift();
-    }
-    totalUpdatesBeforeLastSample = value;
-    update(updatesOverTime);
-    return value;
-});
+
+var graphtData = rateUpdates
+    .slidingWindow(maxNumberOfDataPoints)
+    .onValue(function (updates) {
+        update(updates)
+    });
